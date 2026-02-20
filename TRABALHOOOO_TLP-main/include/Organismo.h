@@ -10,15 +10,16 @@ public:
     float energia;
     Gene dna;
     TipoSer tipo;
-    float timerAtaque;
-    float animacao;
+    int kills;
+    float tamanhoBase;
+    bool jaColidiu;
     
     Organismo(Vector2 p, Gene g, TipoSer t);
     void Update(float dt, Vector2 playerPos, std::vector<Organismo*>& todos);
     void Draw();
-    void DrawVirusVerde();
-    void DrawVirusAzul();
-    void DrawVirusRoxo();
-    void DrawJogador();
+    float GetRaio();
 };
+
+void ResolverColisoes(std::vector<Organismo*>& todos);
+
 #endif

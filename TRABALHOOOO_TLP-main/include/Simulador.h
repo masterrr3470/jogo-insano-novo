@@ -12,6 +12,11 @@ public:
     float timerMorte;
     int opcaoPausa;
     
+    float nitroTimer;
+    float nitroAtivoTimer;
+    bool nitroAtivo;
+    float velocidadeNormal;
+    
     Simulador();
     ~Simulador();
     void Update();
@@ -20,6 +25,7 @@ public:
     void SaveGame();
     void LoadGame();
     void DesenharBossMorte();
-    void DrawOrgaoPixelado(int nivel, int x, int y, bool selecionado); // <-- ADICIONE ESTA LINHA
+    void DrawOrgaoAnimado(int nivel, int x, int y, bool selecionado, float tempo);
+    void DrawMenuAnimado(float tempo);
 };
 #endif

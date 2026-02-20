@@ -6,8 +6,11 @@
 int nivelAtual = 1;
 const char* nomesNiveis[] = {"", "PELE", "PULMOES", "FIGADO", "CEREBRO", "CORACAO (BOSS)"};
 Color coresNiveis[] = {WHITE, {255, 200, 180}, {200, 255, 220}, {255, 255, 200}, {220, 200, 255}, {255, 180, 180}};
+float timerMorte = 0;
+int opcaoPausa = 0;
 
-Simulador::Simulador() : estadoAtual(GameState::MENU), pontosDNA(0), nivelSalvo(1), timerMorte(0), opcaoPausa(0) {
+Simulador::Simulador() : estadoAtual(GameState::MENU), pontosDNA(0), nivelSalvo(1),
+                          nitroTimer(0), nitroAtivoTimer(0), nitroAtivo(false), velocidadeNormal(320.0f) {
     ResetJogo(1);
 }
 
@@ -37,14 +40,18 @@ void Simulador::LoadGame() {
 
 void Simulador::ResetJogo(int nivel) {
     nivelAtual = nivel;
+    nitroTimer = 0;
+    nitroAtivoTimer = 0;
+    nitroAtivo = false;
+    
     for (auto o : populacao) delete o;
     populacao.clear();
     
-    // JOGADOR - MAIS RÁPIDO E MAIOR
-    populacao.push_back(new Organismo({640, 360}, {320.0f + (nivel*25), 30.0f, LIME}, TipoSer::JOGADOR));
+    velocidadeNormal = 320.0f + (nivel*25);
+    populacao.push_back(new Organismo({640, 360}, {velocidadeNormal, 30.0f, LIME}, TipoSer::JOGADOR));
     
-    // AZUIS - Quantidade aumentada e mais rápidos
-    int qtdPresas = (25 + nivel * 8);
+    // 50, 100, 150, 200, 250 AZUIS por fase
+    int qtdPresas = 50 * nivel;
     for(int i=0; i < qtdPresas; i++) {
         populacao.push_back(new Organismo(
             {(float)GetRandomValue(100, 1180), (float)GetRandomValue(100, 620)}, 
@@ -53,78 +60,150 @@ void Simulador::ResetJogo(int nivel) {
         ));
     }
     
-    // Anticorpos (roxos)
-    int qtdAnticorpos = 2 + nivel;
-    for(int i=0; i < qtdAnticorpos; i++) {
+    // 20 BRANCOS (sem respawn)
+    for(int i=0; i < 20; i++) {
         populacao.push_back(new Organismo(
             {(float)GetRandomValue(100, 1180), (float)GetRandomValue(100, 620)}, 
-            {170.0f + nivel*12, 18.0f, Color{220, 80, 220, 255}}, 
+            {170.0f + nivel*12, 18.0f, WHITE}, 
             TipoSer::ANTICORPO
         ));
     }
 }
 
-void Simulador::DrawOrgaoPixelado(int nivel, int x, int y, bool selecionado) {
+void Simulador::DrawOrgaoAnimado(int nivel, int x, int y, bool selecionado, float tempo) {
     Color corBase = selecionado ? GOLD : DARKGRAY;
     Color corDetalhe = selecionado ? YELLOW : GRAY;
+    float animacao = tempo * 1.5f;
     
     switch(nivel) {
-        case 1: // PELE
-            DrawRectangle(x-40, y-30, 80, 60, corBase);
+        case 1:
+            DrawRectangle(x-40, y-30, 80, 60, Color{255, 220, 180, 255});
             DrawRectangle(x-35, y-25, 70, 50, corDetalhe);
-            for(int i=0; i<5; i++) {
-                for(int j=0; j<4; j++) {
-                    DrawRectangle(x-30+i*15, y-20+j*12, 4, 4, corBase);
+            for(int i=0; i<6; i++) {
+                for(int j=0; j<5; j++) {
+                    float offset = sinf(tempo + i*0.5f + j*0.3f) * 1.5f;
+                    DrawCircle(x-30+i*14, (int)(y-20+j*12+offset), 2, corBase);
                 }
             }
-            DrawText("PELE", x-20, y+35, 12, corBase);
+            DrawText("PELE", x-20, y+35, 14, corBase);
             break;
             
-        case 2: // PULMÕES
-            DrawCircle(x-20, y-10, 25, corBase);
-            DrawCircle(x+20, y-10, 25, corBase);
-            DrawRectangle(x-25, y-15, 50, 20, corDetalhe);
-            DrawRectangle(x-15, y-20, 6, 25, corDetalhe);
-            DrawRectangle(x+9, y-20, 6, 25, corDetalhe);
-            DrawText("PULMOES", x-30, y+35, 12, corBase);
-            break;
-            
-        case 3: // FÍGADO
-            DrawRectangle(x-35, y-25, 70, 50, corBase);
-            DrawCircle(x-25, y-25, 15, corDetalhe);
-            DrawCircle(x+25, y-20, 12, corDetalhe);
-            DrawRectangle(x-30, y-15, 25, 30, corDetalhe);
-            DrawRectangle(x+5, y-10, 25, 25, corDetalhe);
-            DrawText("FIGADO", x-25, y+35, 12, corBase);
-            break;
-            
-        case 4: // CÉREBRO
-            DrawCircle(x, y-5, 30, corBase);
-            DrawCircle(x-15, y-15, 12, corDetalhe);
-            DrawCircle(x+15, y-15, 12, corDetalhe);
-            DrawCircle(x-10, y+10, 10, corDetalhe);
-            DrawCircle(x+10, y+10, 10, corDetalhe);
-            DrawCircle(x, y-20, 10, corDetalhe);
-            DrawLine(x, y-30, x, y+20, corDetalhe);
-            DrawText("CEREBRO", x-30, y+35, 12, corBase);
-            break;
-            
-        case 5: // CORAÇÃO
-            DrawCircle(x-12, y-15, 15, corBase);
-            DrawCircle(x+12, y-15, 15, corBase);
-            DrawTriangle({(float)(x-12), (float)(y-28)}, {(float)(x-25), (float)(y-10)}, {(float)(x), (float)(y+10)}, corBase);
-            DrawTriangle({(float)(x+12), (float)(y-28)}, {(float)(x+25), (float)(y-10)}, {(float)(x), (float)(y+10)}, corBase);
-            DrawRectangle(x-8, y-5, 16, 20, corDetalhe);
-            if (selecionado) {
-                float pulse = sinf(GetTime() * 3) * 3;
-                DrawCircle(x, (int)(y+25 + pulse), 3, RED);
+        case 2:
+            {
+                float respiracao = sinf(animacao * 0.8f) * 4;
+                DrawEllipse(x-25, (int)(y-5+respiracao), 20, 28, corBase);
+                DrawEllipse(x+25, (int)(y-5+respiracao), 20, 28, corBase);
+                DrawRectangle(x-5, (int)(y-35+respiracao), 10, 25, corDetalhe);
+                DrawLine(x-5, (int)(y-10+respiracao), x-25, (int)(y+10+respiracao), corDetalhe);
+                DrawLine(x+5, (int)(y-10+respiracao), x+25, (int)(y+10+respiracao), corDetalhe);
+                DrawText("PULMOES", x-30, y+35, 14, corBase);
             }
-            DrawText("CORACAO", x-30, y+35, 12, corBase);
+            break;
+            
+        case 3:
+            {
+                float pulso = sinf(animacao * 1.2f) * 2;
+                DrawEllipse(x, (int)(y-5+pulso), 35, 28, corBase);
+                DrawCircle(x+15, (int)(y-10+pulso), 18, corDetalhe);
+                DrawCircle(x-20, (int)(y+pulso), 14, corDetalhe);
+                DrawCircle(x+25, (int)(y+15+pulso), 6, Color{100, 180, 100, 255});
+                DrawText("FIGADO", x-25, y+35, 14, corBase);
+            }
+            break;
+            
+        case 4:
+            {
+                float atividade = sinf(animacao * 2.5f) * 1.5f;
+                for(int i=0; i<5; i++) {
+                    float offset = sinf(tempo*3 + i) * 2;
+                    DrawCircle(x-15 + (int)offset, (int)(y-15+i*8+atividade), 10, corBase);
+                }
+                for(int i=0; i<5; i++) {
+                    float offset = sinf(tempo*3 + i*0.8f) * 2;
+                    DrawCircle(x+15 + (int)offset, (int)(y-15+i*8+atividade), 10, corBase);
+                }
+                DrawLine(x, (int)(y-25+atividade), x, (int)(y+25+atividade), corDetalhe);
+                DrawText("CEREBRO", x-30, y+35, 14, corBase);
+            }
+            break;
+            
+        case 5:
+            {
+                float batimento = sinf(animacao * 4) * 5;
+                DrawCircle(x-12, (int)(y-20+batimento), 12, corBase);
+                DrawCircle(x+12, (int)(y-20+batimento), 12, corBase);
+                DrawEllipse(x-10, (int)(y+batimento), 15, 22, corDetalhe);
+                DrawEllipse(x+10, (int)(y+batimento), 15, 22, corDetalhe);
+                DrawRectangle(x-3, (int)(y-35+batimento), 6, 15, Color{200, 50, 50, 255});
+                
+                if (selecionado) {
+                    float pulse = sinf(tempo * 8) * 6;
+                    DrawCircle(x, (int)(y+35+pulse), 5, RED);
+                }
+                DrawText("CORACAO", x-30, y+35, 14, corBase);
+            }
             break;
     }
 }
 
+void Simulador::DrawMenuAnimado(float tempo) {
+    for(int y=0; y<720; y+=10) {
+        float gradient = sinf(tempo * 0.5f + y * 0.02f) * 0.3f + 0.3f;
+        Color c = {
+            (unsigned char)(20 + gradient * 40),
+            (unsigned char)(10 + gradient * 20),
+            (unsigned char)(10 + gradient * 20),
+            255
+        };
+        DrawRectangle(0, y, 1280, 10, c);
+    }
+    
+    for(int i=0; i<30; i++) {
+        float x = sinf(tempo * 0.3f + i) * 640 + 640;
+        float y = cosf(tempo * 0.2f + i*0.5f) * 360 + 360;
+        float size = sinf(tempo + i) * 2 + 3;
+        DrawCircle((int)x, (int)y, size, Color{100, 255, 100, (unsigned char)(100 + sinf(tempo*2+i)*50)});
+    }
+    
+    DrawText("VIRUS: BIOWARFARE", 380, 100, 50, LIME);
+    DrawText("~~~~~~~~~~~~~~~", 390, 155, 40, DARKGREEN);
+    DrawText("Infecte. Domine. Destrua.", 450, 180, 22, GRAY);
+    
+    int startY = 280;
+    float buttonPulse = sinf(tempo * 3) * 3;
+    
+    DrawRectangle(450, (int)(startY + buttonPulse), 380, 50, Color{0, 100, 0, 200});
+    DrawRectangleLines(450, (int)(startY + buttonPulse), 380, 50, LIME);
+    DrawText("[N] NOVO JOGO", 540, (int)(startY + 15 + buttonPulse), 25, WHITE);
+    
+    DrawRectangle(450, (int)(startY + 60 + buttonPulse), 380, 50, Color{0, 100, 0, 200});
+    DrawRectangleLines(450, (int)(startY + 60 + buttonPulse), 380, 50, LIME);
+    DrawText("[L] CARREGAR JOGO", 510, (int)(startY + 75 + buttonPulse), 25, WHITE);
+    
+    DrawRectangle(450, (int)(startY + 120 + buttonPulse), 380, 50, Color{0, 100, 0, 200});
+    DrawRectangleLines(450, (int)(startY + 120 + buttonPulse), 380, 50, LIME);
+    DrawText("[I] INSTRUCOES", 520, (int)(startY + 135 + buttonPulse), 25, WHITE);
+    
+    DrawRectangle(450, (int)(startY + 180 + buttonPulse), 380, 50, Color{100, 0, 0, 200});
+    DrawRectangleLines(450, (int)(startY + 180 + buttonPulse), 380, 50, RED);
+    DrawText("[Q] SAIR", 580, (int)(startY + 195 + buttonPulse), 25, WHITE);
+}
+
 void Simulador::Update() {
+    float dt = GetFrameTime();
+    
+    if (nitroAtivo) {
+        nitroAtivoTimer -= dt;
+        if (nitroAtivoTimer <= 0) {
+            nitroAtivo = false;
+            nitroTimer = 20.0f;
+            populacao[0]->dna.velocidade = velocidadeNormal;
+        }
+    } else {
+        nitroTimer -= dt;
+        if (nitroTimer <= 0) nitroTimer = 0;
+    }
+    
     if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
     
     if (estadoAtual == GameState::MENU) {
@@ -143,7 +222,12 @@ void Simulador::Update() {
     else if (estadoAtual == GameState::PLAYING) {
         if (IsKeyPressed(KEY_P)) { estadoAtual = GameState::PAUSE; opcaoPausa = 0; }
         
-        float dt = GetFrameTime();
+        if (IsKeyPressed(KEY_LEFT_SHIFT) && nitroTimer <= 0 && !nitroAtivo) {
+            nitroAtivo = true;
+            nitroAtivoTimer = 5.0f;
+            populacao[0]->dna.velocidade = velocidadeNormal * 2.5f;
+        }
+        
         Organismo* player = populacao[0];
         
         Vector2 m = {(float)(IsKeyDown(KEY_D)-IsKeyDown(KEY_A)), (float)(IsKeyDown(KEY_S)-IsKeyDown(KEY_W))};
@@ -153,12 +237,16 @@ void Simulador::Update() {
         player->pos.x = Clamp(player->pos.x, 0.0f, 1280.0f);
         player->pos.y = Clamp(player->pos.y, 0.0f, 720.0f);
         
+        for(int i = (int)populacao.size() - 1; i >= 1; i--) {
+            populacao[i]->Update(dt, player->pos, populacao);
+        }
+        
+        ResolverColisoes(populacao);
+        
         int neutros = 0;
         int anticorpos = 0;
         
         for(int i = (int)populacao.size() - 1; i >= 1; i--) {
-            populacao[i]->Update(dt, player->pos, populacao);
-            
             if (populacao[i]->tipo == TipoSer::NEUTRO) neutros++;
             if (populacao[i]->tipo == TipoSer::ANTICORPO) anticorpos++;
             
@@ -169,8 +257,14 @@ void Simulador::Update() {
                     populacao[i]->dna.velocidade += 30.0f;
                     pontosDNA += 15;
                 } else if (populacao[i]->tipo == TipoSer::ANTICORPO) {
-                    player->energia -= (40.0f + nivelAtual * 6) * dt;
+                    player->energia -= (65.0f + nivelAtual * 12) * dt;
                 }
+            }
+            
+            if(populacao[i]->tipo == TipoSer::INFETADO && populacao[i]->energia <= 0) {
+                delete populacao[i];
+                populacao.erase(populacao.begin() + i);
+                continue;
             }
             
             if(populacao[i]->tipo == TipoSer::ANTICORPO && populacao[i]->energia <= 0) {
@@ -180,7 +274,7 @@ void Simulador::Update() {
             }
         }
         
-        if (neutros == 0 && anticorpos == 0) {
+        if (neutros == 0) {
             if (nivelAtual < 5) { 
                 nivelAtual++; 
                 estadoAtual = GameState::MAPA; 
@@ -193,24 +287,20 @@ void Simulador::Update() {
         if (player->energia <= 0) {
             estadoAtual = GameState::GAMEOVER;
         }
-        
-        if (GetRandomValue(0, 100) < (1 + nivelAtual) && anticorpos < 5 + nivelAtual) {
-            populacao.push_back(new Organismo(
-                {(float)GetRandomValue(0, 1280), (float)GetRandomValue(0, 100)}, 
-                {170.0f + nivelAtual*12, 18.0f, Color{220, 80, 220, 255}}, 
-                TipoSer::ANTICORPO
-            ));
-        }
     }
     else if (estadoAtual == GameState::PAUSE) {
         if (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP)) opcaoPausa = (opcaoPausa - 1 + 3) % 3;
         if (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN)) opcaoPausa = (opcaoPausa + 1) % 3;
+        
+        if (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_P)) estadoAtual = GameState::PLAYING;
+        if (IsKeyPressed(KEY_G)) { SaveGame(); estadoAtual = GameState::MENU; }
+        if (IsKeyPressed(KEY_M)) estadoAtual = GameState::MENU;
+        
         if (IsKeyPressed(KEY_ENTER)) {
             if (opcaoPausa == 0) estadoAtual = GameState::PLAYING;
             else if (opcaoPausa == 1) { SaveGame(); estadoAtual = GameState::MENU; }
             else if (opcaoPausa == 2) estadoAtual = GameState::MENU;
         }
-        if (IsKeyPressed(KEY_P)) estadoAtual = GameState::PLAYING;
     }
     else if (estadoAtual == GameState::CUTSCENE) {
         timerMorte += GetFrameTime();
@@ -223,25 +313,10 @@ void Simulador::Update() {
 
 void Simulador::Draw() {
     BeginDrawing();
+    float tempo = GetTime();
     
     if (estadoAtual == GameState::MENU) {
-        ClearBackground({10, 5, 5, 255});
-        DrawText("VIRUS: BIOWARFARE", 380, 120, 50, LIME);
-        DrawText("~~~~~~~~~~~~~~~", 390, 175, 40, DARKGREEN);
-        
-        DrawRectangle(450, 280, 380, 50, Color{0, 100, 0, 200});
-        DrawText("[N] NOVO JOGO", 540, 295, 25, WHITE);
-        
-        DrawRectangle(450, 340, 380, 50, Color{0, 100, 0, 200});
-        DrawText("[L] CARREGAR JOGO", 510, 355, 25, WHITE);
-        
-        DrawRectangle(450, 400, 380, 50, Color{0, 100, 0, 200});
-        DrawText("[I] INSTRUCOES", 520, 415, 25, WHITE);
-        
-        DrawRectangle(450, 460, 380, 50, Color{100, 0, 0, 200});
-        DrawText("[Q] SAIR", 580, 475, 25, WHITE);
-        
-        DrawText("Infecte os azuis - Destrua os roxos", 420, 600, 20, GRAY);
+        DrawMenuAnimado(tempo);
     }
     else if (estadoAtual == GameState::MAPA) {
         ClearBackground({15, 5, 20, 255});
@@ -254,7 +329,7 @@ void Simulador::Draw() {
         
         for(int i=1; i<=5; i++) {
             bool selecionado = (i == nivelAtual);
-            DrawOrgaoPixelado(i, 350 + i*120, 280, selecionado);
+            DrawOrgaoAnimado(i, 350 + i*120, 280, selecionado, tempo);
         }
         
         DrawText("Pressione [ENTER] para iniciar", 430, 550, 24, GREEN);
@@ -278,34 +353,76 @@ void Simulador::Draw() {
             populacao[0]->energia > 50 ? LIME : (populacao[0]->energia > 25 ? YELLOW : RED));
         DrawRectangleLines(920, 15, 150, 20, WHITE);
         
-        DrawText(TextFormat("DNA: %d", pontosDNA), 1100, 14, 22, GOLD);
+        if (nitroAtivo) {
+            DrawText("NITRO ATIVO!", 1080, 12, 20, GOLD);
+            DrawRectangle(1080, 35, 100, 15, DARKGRAY);
+            DrawRectangle(1080, 35, (int)(100 * (nitroAtivoTimer/5.0f)), 15, GOLD);
+        } else {
+            if (nitroTimer <= 0) {
+                DrawText("NITRO PRONTO [SHIFT]", 1050, 12, 20, LIME);
+            } else {
+                DrawText(TextFormat("NITRO: %.0fs", nitroTimer), 1080, 12, 18, GRAY);
+            }
+        }
         
-        int verdes = 0, azuis = 0, roxos = 0;
+        DrawText(TextFormat("DNA: %d", pontosDNA), 1100, 40, 22, GOLD);
+        
+        int verdes = 0, azuis = 0, brancos = 0;
         for(auto& o : populacao) {
             if(o->tipo == TipoSer::INFETADO) verdes++;
             else if(o->tipo == TipoSer::NEUTRO) azuis++;
-            else if(o->tipo == TipoSer::ANTICORPO) roxos++;
+            else if(o->tipo == TipoSer::ANTICORPO) brancos++;
         }
         
         DrawText(TextFormat("VERDES: %d", verdes), 20, 700, 18, LIME);
-        DrawText(TextFormat("AZUIS: %d", azuis), 150, 700, 18, Color{100, 220, 255, 255});
-        DrawText(TextFormat("ROXOS: %d", roxos), 280, 700, 18, Color{220, 80, 220, 255});
+        DrawText(TextFormat("AZUIS: %d", azuis), 150, 700, 18, SKYBLUE);
+        DrawText(TextFormat("BRANCOS: %d", brancos), 280, 700, 18, WHITE);
         
+        // MENU DE PAUSA MELHORADO
         if (estadoAtual == GameState::PAUSE) {
-            DrawRectangle(0, 0, 1280, 720, {0, 0, 0, 200});
-            DrawRectangle(400, 180, 480, 350, Color{30, 30, 30, 255});
-            DrawRectangleLines(400, 180, 480, 350, LIME);
+            DrawRectangle(0, 0, 1280, 720, Color{0, 0, 0, 200});
             
-            DrawText("PAUSA", 560, 200, 45, GOLD);
+            DrawRectangle(400, 180, 480, 280, Color{30, 30, 40, 255});
+            DrawRectangleLines(400, 180, 480, 280, LIME);
+            DrawRectangleLines(402, 182, 476, 276, DARKGREEN);
             
-            DrawRectangle(450, 280, 380, 60, opcaoPausa == 0 ? Color{0, 150, 0, 255} : Color{50, 50, 50, 255});
-            DrawText("CONTINUAR", 540, 300, 28, WHITE);
+            DrawText("PAUSA", 560, 195, 40, GOLD);
+            DrawText("=======", 560, 240, 30, DARKGRAY);
             
-            DrawRectangle(450, 350, 380, 60, opcaoPausa == 1 ? Color{0, 150, 0, 255} : Color{50, 50, 50, 255});
-            DrawText("GUARDAR E SAIR", 480, 370, 28, WHITE);
+            int optionY = 270;
+            int spacing = 55;
             
-            DrawRectangle(450, 420, 380, 60, opcaoPausa == 2 ? Color{0, 150, 0, 255} : Color{50, 50, 50, 255});
-            DrawText("MENU PRINCIPAL", 485, 440, 28, WHITE);
+            if (opcaoPausa == 0) {
+                DrawRectangle(420, optionY, 440, 45, Color{0, 150, 0, 255});
+                DrawRectangleLines(420, optionY, 440, 45, WHITE);
+            } else {
+                DrawRectangle(420, optionY, 440, 45, Color{50, 50, 60, 255});
+            }
+            DrawText("[C/P]", 430, optionY + 12, 22, LIME);
+            DrawText("CONTINUAR", 520, optionY + 12, 22, WHITE);
+            
+            optionY += spacing;
+            if (opcaoPausa == 1) {
+                DrawRectangle(420, optionY, 440, 45, Color{0, 150, 0, 255});
+                DrawRectangleLines(420, optionY, 440, 45, WHITE);
+            } else {
+                DrawRectangle(420, optionY, 440, 45, Color{50, 50, 60, 255});
+            }
+            DrawText("[G]", 430, optionY + 12, 22, LIME);
+            DrawText("GUARDAR E SAIR", 520, optionY + 12, 22, WHITE);
+            
+            optionY += spacing;
+            if (opcaoPausa == 2) {
+                DrawRectangle(420, optionY, 440, 45, Color{150, 0, 0, 255});
+                DrawRectangleLines(420, optionY, 440, 45, WHITE);
+            } else {
+                DrawRectangle(420, optionY, 440, 45, Color{50, 50, 60, 255});
+            }
+            DrawText("[M]", 430, optionY + 12, 22, LIME);
+            DrawText("MENU PRINCIPAL", 520, optionY + 12, 22, WHITE);
+            
+            DrawText("Use W/S ou SETAS para navegar", 450, 420, 16, GRAY);
+            DrawText("ENTER para selecionar", 485, 440, 16, GRAY);
         }
     }
     else if (estadoAtual == GameState::CUTSCENE) {
@@ -333,10 +450,12 @@ void Simulador::Draw() {
         ClearBackground({10, 20, 10, 255});
         DrawText("COMO JOGAR:", 480, 80, 40, LIME);
         DrawText("1. Use W/A/S/D para mover", 350, 160, 24, WHITE);
-        DrawText("2. Toque nos AZUIS para infecta-los", 350, 210, 24, Color{100, 220, 255, 255});
-        DrawText("3. Os VERDES atacarao os ROXOS automaticamente", 350, 260, 24, LIME);
-        DrawText("4. Evite os ROXOS - eles causam dano!", 350, 310, 24, Color{220, 80, 220, 255});
-        DrawText("5. Infecte todos e destrua o sistema imunologico!", 350, 360, 24, GOLD);
+        DrawText("2. Toque nos AZUIS para infecta-los", 350, 210, 24, SKYBLUE);
+        DrawText("3. Os VERDES atacarao os BRANCOS automaticamente", 350, 260, 24, LIME);
+        DrawText("4. 1 HIT - Branco mata verde instantaneamente!", 350, 310, 24, GOLD);
+        DrawText("5. BRANCOS crescem ao matar verdes!", 350, 350, 24, RED);
+        DrawText("6. SHIFT = Nitro (20s cooldown, 5s duracao)", 350, 390, 24, YELLOW);
+        DrawText("7. Vitoria: Converta todos os AZUIS!", 350, 430, 24, LIME);
         DrawText("[BACKSPACE] Voltar", 520, 550, 24, GRAY);
     }
     

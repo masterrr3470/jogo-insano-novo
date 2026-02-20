@@ -10,12 +10,4 @@ struct Gene {
     float forca;
     Color cor;
 };
-
-struct Particula {
-    Vector2 pos;
-    Vector2 vel;
-    float vida;
-    Color cor;
-    float tamanho;
-};
 #endif
