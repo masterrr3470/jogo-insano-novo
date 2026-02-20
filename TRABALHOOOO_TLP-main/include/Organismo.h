@@ -12,7 +12,6 @@ public:
     TipoSer tipo;
     int kills;
     float tamanhoBase;
-    bool jaColidiu;
     
     Organismo(Vector2 p, Gene g, TipoSer t);
     void Update(float dt, Vector2 playerPos, std::vector<Organismo*>& todos);

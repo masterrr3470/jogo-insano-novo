@@ -3,8 +3,11 @@
 #include <vector>
 #include <cmath>
 
+// ✅ NOVO: Cooldown de dano para não hitar todo o frame
+float cooldownDano = 0.3f;
+
 Organismo::Organismo(Vector2 p, Gene g, TipoSer t) 
-    : pos(p), dna(g), tipo(t), energia(100.0f), kills(0), jaColidiu(false) {
+    : pos(p), dna(g), tipo(t), energia(100.0f), kills(0) {
     tamanhoBase = 10.0f;
     if (tipo == TipoSer::JOGADOR) tamanhoBase = 18.0f;
     if (tipo == TipoSer::ANTICORPO) tamanhoBase = 13.0f;
@@ -17,8 +20,6 @@ float Organismo::GetRaio() {
 }
 
 void Organismo::Update(float dt, Vector2 playerPos, std::vector<Organismo*>& todos) {
-    jaColidiu = false;
-    
     if (tipo == TipoSer::JOGADOR) {
         if (energia < 100.0f) energia += 3.0f * dt;
         return;
@@ -43,27 +44,31 @@ void Organismo::Update(float dt, Vector2 playerPos, std::vector<Organismo*>& tod
         }
     } 
     else if (tipo == TipoSer::ANTICORPO) {
-        Organismo* alvoVerde = nullptr;
-        float dMinVerde = 200.0f;
+        // BRANCOS - Perseguem jogador mas SE ESPALHAM
+        Vector2 direcao = Vector2Normalize(Vector2Subtract(playerPos, pos));
+        
+        // Evitar agrupamento - separar de outros brancos próximos
+        Vector2 separacao = {0, 0};
+        int vizinhos = 0;
         
         for(auto& outro : todos) {
-            if(outro->tipo == TipoSer::INFETADO) {
-                float d = Vector2Distance(pos, outro->pos);
-                if(d < dMinVerde) { 
-                    dMinVerde = d; 
-                    alvoVerde = outro; 
+            if(outro->tipo == TipoSer::ANTICORPO && outro != this) {
+                float dist = Vector2Distance(pos, outro->pos);
+                if(dist < 60.0f && dist > 0) {
+                    Vector2 afastamento = Vector2Normalize(Vector2Subtract(pos, outro->pos));
+                    separacao = Vector2Add(separacao, Vector2Scale(afastamento, 1.0f / dist));
+                    vizinhos++;
                 }
             }
         }
         
-        Vector2 target;
-        if(alvoVerde && dMinVerde < 150.0f) {
-            target = alvoVerde->pos;
-        } else {
-            target = playerPos;
+        if(vizinhos > 0) {
+            separacao = Vector2Scale(separacao, 1.0f / vizinhos);
+            separacao = Vector2Normalize(separacao);
+            direcao = Vector2Add(Vector2Scale(direcao, 0.6f), Vector2Scale(separacao, 0.4f));
+            direcao = Vector2Normalize(direcao);
         }
         
-        Vector2 direcao = Vector2Normalize(Vector2Subtract(target, pos));
         vel = Vector2Lerp(vel, Vector2Scale(direcao, dna.velocidade * 1.5f), dt * 3.0f);
     } 
     else if (tipo == TipoSer::INFETADO) {
@@ -116,41 +121,52 @@ void ResolverColisoes(std::vector<Organismo*>& todos) {
                 Vector2 normal = Vector2Scale(diff, 1.0f / dist);
                 float overlap = minDist - dist;
                 
-                // BRANCOS ATRAVESSAM AZUIS
+                // ✅ ANTICORPO vs NEUTRO - Sem colisão (passam através)
                 if ((a->tipo == TipoSer::ANTICORPO && b->tipo == TipoSer::NEUTRO) ||
                     (b->tipo == TipoSer::ANTICORPO && a->tipo == TipoSer::NEUTRO)) {
                     continue;
                 }
                 
-                // COMBATE: BRANCO vs VERDE (1 HIT KILL)
+                // ✅ ANTICORPO vs INFETADO - DANO INSTANTÂNEO (1 HIT KILL)
                 if ((a->tipo == TipoSer::ANTICORPO && b->tipo == TipoSer::INFETADO) ||
                     (b->tipo == TipoSer::ANTICORPO && a->tipo == TipoSer::INFETADO)) {
                     
                     Organismo* branco = (a->tipo == TipoSer::ANTICORPO) ? a : b;
                     Organismo* verde = (a->tipo == TipoSer::INFETADO) ? a : b;
                     
+                    // ✅ VERDE MORRE IMEDIATAMENTE
                     verde->energia = 0;
+                    
+                    // ✅ BRANCO PERDE UM POUCO DE ENERGIA (12 HP)
                     branco->energia -= 12.0f;
                     
                     if (branco->energia > 0) {
                         branco->kills++;
                     }
                     
+                    // Empurrar branco para trás
                     branco->pos = Vector2Add(branco->pos, Vector2Scale(normal, 5.0f));
                 }
                 
-                // Colisão Jogador vs Branco
+                // ✅ ANTICORPO vs JOGADOR - DANO INSTANTÂNEO (X DANO POR HIT)
                 if ((a->tipo == TipoSer::JOGADOR && b->tipo == TipoSer::ANTICORPO) ||
                     (b->tipo == TipoSer::JOGADOR && a->tipo == TipoSer::ANTICORPO)) {
-                    if (a->tipo == TipoSer::JOGADOR) {
-                        a->pos = Vector2Subtract(a->pos, Vector2Scale(normal, overlap * 0.5f));
-                        b->pos = Vector2Add(b->pos, Vector2Scale(normal, overlap * 0.5f * 0.5f));
-                    } else {
-                        b->pos = Vector2Subtract(b->pos, Vector2Scale(normal, overlap * 0.5f));
-                        a->pos = Vector2Add(a->pos, Vector2Scale(normal, overlap * 0.5f * 0.5f));
-                    }
+                    
+                    Organismo* player = (a->tipo == TipoSer::JOGADOR) ? a : b;
+                    Organismo* branco = (a->tipo == TipoSer::ANTICORPO) ? a : b;
+                    
+                    // ✅ DANO INSTANTÂNEO: 35 HP por hit (ajusta conforme necessário)
+                    float danoPorHit = 2.0f;
+                    player->energia -= danoPorHit;
+                    
+                    // ✅ Empurrar ambos para evitar multi-hit no mesmo frame
+                    player->pos = Vector2Subtract(player->pos, Vector2Scale(normal, overlap * 0.5f));
+                    branco->pos = Vector2Add(branco->pos, Vector2Scale(normal, overlap * 0.5f * 0.5f));
+                    
+                    // ✅ Empurrar branco para longe após o hit
+                    branco->vel = Vector2Scale(normal, -200.0f);
                 }
-                // Colisão Jogador vs outros (passa através)
+                // ✅ JOGADOR vs outros (NEUTRO, INFETADO)
                 else if (a->tipo == TipoSer::JOGADOR || b->tipo == TipoSer::JOGADOR) {
                     if (a->tipo == TipoSer::JOGADOR) {
                         b->pos = Vector2Add(b->pos, Vector2Scale(normal, overlap * 0.3f));
@@ -158,7 +174,7 @@ void ResolverColisoes(std::vector<Organismo*>& todos) {
                         a->pos = Vector2Add(a->pos, Vector2Scale(normal, overlap * 0.3f));
                     }
                 }
-                // Colisão Brancos vs outros
+                // ✅ ANTICORPO vs outros
                 else if (a->tipo == TipoSer::ANTICORPO || b->tipo == TipoSer::ANTICORPO) {
                     if (a->tipo == TipoSer::ANTICORPO) {
                         a->pos = Vector2Subtract(a->pos, Vector2Scale(normal, overlap * 0.6f));
@@ -168,7 +184,7 @@ void ResolverColisoes(std::vector<Organismo*>& todos) {
                         a->pos = Vector2Add(a->pos, Vector2Scale(normal, overlap * 0.4f));
                     }
                 }
-                // Outros casos
+                // ✅ Outros vs Outros
                 else {
                     Vector2 pushA = Vector2Scale(normal, -overlap * 0.5f);
                     Vector2 pushB = Vector2Scale(normal, overlap * 0.5f);
