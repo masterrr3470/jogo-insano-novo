@@ -19,6 +19,6 @@ public:
     float GetRaio();
 };
 
-void ResolverColisoes(std::vector<Organismo*>& todos);
+void ResolverColisoes(std::vector<Organismo*>& todos, bool imunidadeAtiva);
 
 #endif

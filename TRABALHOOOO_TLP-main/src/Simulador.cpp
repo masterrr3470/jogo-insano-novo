@@ -11,8 +11,8 @@ int opcaoPausa = 0;
 bool jogoComecou = false;
 
 Simulador::Simulador() : estadoAtual(GameState::MENU), pontosDNA(0), nivelSalvo(1),
-nitroTimer(0), nitroAtivoTimer(0), nitroAtivo(false), velocidadeNormal(320.0f),
-imunidadeTimer(0), imunidadeAtiva(false) {
+    nitroTimer(0), nitroAtivoTimer(0), nitroAtivo(false), velocidadeNormal(320.0f),
+    imunidadeTimer(0), imunidadeAtiva(false) {
     ResetJogo(1);
 }
 
@@ -28,7 +28,6 @@ void Simulador::SaveGame() {
         file.write((char*)&pontosDNA, sizeof(int));
         float vidaJogador = populacao[0]->energia;
         file.write((char*)&vidaJogador, sizeof(float));
-        
         int qtdNeutros = 0, qtdAnticorpos = 0, qtdVerdes = 0;
         for(auto& o : populacao) {
             if(o->tipo == TipoSer::NEUTRO) qtdNeutros++;
@@ -38,7 +37,6 @@ void Simulador::SaveGame() {
         file.write((char*)&qtdNeutros, sizeof(int));
         file.write((char*)&qtdAnticorpos, sizeof(int));
         file.write((char*)&qtdVerdes, sizeof(int));
-        
         for(auto& o : populacao) {
             if(o->tipo == TipoSer::NEUTRO) {
                 file.write((char*)&o->pos, sizeof(Vector2));
@@ -65,13 +63,11 @@ void Simulador::LoadGame() {
         file.read((char*)&pontosDNA, sizeof(int));
         float vidaJogador;
         file.read((char*)&vidaJogador, sizeof(float));
-        
         int qtdNeutros, qtdAnticorpos, qtdVerdes;
         file.read((char*)&qtdNeutros, sizeof(int));
         file.read((char*)&qtdAnticorpos, sizeof(int));
         file.read((char*)&qtdVerdes, sizeof(int));
         
-        // 🔥 Limpa população antiga antes de carregar
         for (auto o : populacao) delete o;
         populacao.clear();
         
@@ -97,15 +93,15 @@ void Simulador::LoadGame() {
         file.close();
         
         imunidadeAtiva = true;
-        imunidadeTimer = 3.0f;
-        jogoComecou = false;  // ✅ Reset flag ao carregar
-        estadoAtual = GameState::MAPA;  // ✅ Vai para o mapa para mostrar o nível salvo
+        imunidadeTimer = 5.0f; 
+        jogoComecou = false;
+        estadoAtual = GameState::MAPA;
     }
 }
 
 void Simulador::ResetJogo(int nivel) {
     nivelAtual = nivel;
-    imunidadeTimer = 3.0f;
+    imunidadeTimer = 5.0f;  
     imunidadeAtiva = true;
     nitroTimer = 0;
     nitroAtivoTimer = 0;
@@ -113,7 +109,6 @@ void Simulador::ResetJogo(int nivel) {
     timerMorte = 0;
     jogoComecou = false;
     
-    // 🔥 Limpa memória e população
     for (auto o : populacao) delete o;
     populacao.clear();
     
@@ -275,12 +270,11 @@ void Simulador::Update() {
     
     if (estadoAtual == GameState::MENU) {
         if (IsKeyPressed(KEY_N)) {
-            // ✅ NOVO JOGO: Sempre resetar para nível 1 do zero
             nivelAtual = 1;
             pontosDNA = 0;
             timerMorte = 0;
             jogoComecou = false;
-            ResetJogo(1);  // 🔥 CHAMAR RESET IMEDIATAMENTE
+            ResetJogo(1);
             estadoAtual = GameState::MAPA;
         }
         if (IsKeyPressed(KEY_L)) LoadGame();
@@ -289,12 +283,10 @@ void Simulador::Update() {
     }
     else if (estadoAtual == GameState::MAPA) {
         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
-            // ✅ CARREGAR JOGO: Se população tem organismos salvos, NÃO resetar
-            // Se população está vazia (ex: novo jogo sem ResetJogo), então resetar
             if (populacao.size() <= 1) {
                 ResetJogo(nivelAtual);
             }
-            jogoComecou = false;  // ✅ Reset flag para vitória não disparar no frame 1
+            jogoComecou = false;
             estadoAtual = GameState::PLAYING;
         }
         if (IsKeyPressed(KEY_BACKSPACE)) estadoAtual = GameState::MENU;
@@ -339,7 +331,7 @@ void Simulador::Update() {
             populacao[i]->Update(dt, player->pos, populacao);
         }
         
-        ResolverColisoes(populacao);
+        ResolverColisoes(populacao, imunidadeAtiva);
         
         int neutros = 0, anticorpos = 0, verdes = 0;
         for(int i = (int)populacao.size() - 1; i >= 1; i--) {
@@ -370,7 +362,6 @@ void Simulador::Update() {
             }
         }
         
-        // Só verificar vitória se jogo já começou e tem organismos
         if (jogoComecou && populacao.size() > 1) {
             if (neutros == 0) {
                 if (nivelAtual < 5) {
@@ -515,7 +506,6 @@ void Simulador::Draw() {
     else if (estadoAtual == GameState::CUTSCENE) {
         ClearBackground({20, 0, 0, 255});
         float t = timerMorte;
-        
         for(int i=0; i<50; i++) {
             float angle = (i/50.0f) * PI * 2;
             float dist = 150 + sinf(t * 5 + i) * 20;
@@ -523,12 +513,10 @@ void Simulador::Draw() {
             DrawCircle(640 + (int)(cosf(angle)*dist*pulse), 360 + (int)(sinf(angle)*dist*pulse),
                 8, Color{200, 0, 0, (unsigned char)(255 - t*40)});
         }
-        
         for(int i=0; i<10; i++) {
             float offset = sinf(t * 3 + i) * 50;
             DrawLine(400 + i*50, 360 + offset, 450 + i*50, 360 + offset + sinf(t*10+i)*30, RED);
         }
-        
         DrawText("O CORACAO PAROU.", 420, 250, 50, Color{(unsigned char)fminf(t * 50, 255), 0, 0, 255});
         if (t > 1.5f) DrawText("O HOSPEDEIRO MORREU.", 380, 350, 40, WHITE);
         if (t > 3.0f) {
@@ -558,13 +546,12 @@ void Simulador::Draw() {
         DrawText("COMO JOGAR:", 480, 80, 40, LIME);
         DrawText("1. Use W/A/S/D para mover", 350, 160, 24, WHITE);
         DrawText("2. Toque nos AZUIS para infecta-los", 350, 210, 24, SKYBLUE);
-        DrawText("3. Voce tem 3s de imunidade no inicio!", 350, 260, 24, SKYBLUE);
+        DrawText("3. Voce tem 5s de imunidade no inicio!", 350, 260, 24, SKYBLUE);  
         DrawText("4. 1 HIT - Branco mata verde instantaneamente!", 350, 310, 24, GOLD);
         DrawText("5. BRANCOS crescem ao matar verdes!", 350, 350, 24, RED);
         DrawText("6. SHIFT = Nitro (20s cooldown, 5s duracao)", 350, 390, 24, YELLOW);
         DrawText("[BACKSPACE] Voltar", 520, 550, 24, GRAY);
     }
-    
     EndDrawing();
 }
 

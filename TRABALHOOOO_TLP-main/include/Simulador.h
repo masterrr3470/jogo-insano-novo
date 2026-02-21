@@ -11,7 +11,7 @@ public:
     int nivelSalvo;
     float timerMorte;
     int opcaoPausa;
-    bool jogoComecou;  // ✅ NOVO: Flag para evitar skip de níveis
+    bool jogoComecou;
     
     // Sistema de Nitro
     float nitroTimer;
@@ -35,7 +35,6 @@ public:
     void DrawMenuAnimado(float tempo);
 };
 
-// Função global de colisões
-void ResolverColisoes(std::vector<Organismo*>& todos);
+void ResolverColisoes(std::vector<Organismo*>& todos, bool imunidadeAtiva);
 
 #endif
