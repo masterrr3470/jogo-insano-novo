@@ -1,33 +1,54 @@
+
+
 #include "Simulador.h"
 #include "raymath.h"
 #include <fstream>
 #include <cmath>
 
+// ============================================================================
+// VARIÁVEIS GLOBAIS DE UI (podem ser movidas para a classe futuramente)
+// ============================================================================
 int nivelAtual = 1;
-const char* nomesNiveis[] = {"", "PELE", "PULMOES", "FIGADO", "CEREBRO", "CORACAO "};
+const char* nomesNiveis[] = {"", "PELE", "PULMOES", "FIGADO", "CEREBRO", "CORACAO"};
 Color coresNiveis[] = {WHITE, {255, 200, 180}, {200, 255, 220}, {255, 255, 200}, {220, 200, 255}, {255, 180, 180}};
 float timerMorte = 0;
 int opcaoPausa = 0;
 bool jogoComecou = false;
 
+// ============================================================================
+// CONSTRUTOR: INICIALIZA JOGO, ÁUDIO E ENTIDADES
+// ============================================================================
 Simulador::Simulador() : estadoAtual(GameState::MENU), pontosDNA(0), nivelSalvo(1),
     nitroTimer(0), nitroAtivoTimer(0), nitroAtivo(false), velocidadeNormal(320.0f),
     imunidadeTimer(0), imunidadeAtiva(false) {
+    
+    // Inicializa o primeiro nível
     ResetJogo(1);
 }
 
+// ============================================================================
+// DESTRUTOR: LIMPA MEMÓRIA DAS ENTIDADES
+// ============================================================================
 Simulador::~Simulador() {
     for (auto o : populacao) delete o;
     populacao.clear();
 }
 
+// ============================================================================
+// SAVEGAME: GUARDA ESTADO ATUAL EM FICHEIRO BINÁRIO
+// ============================================================================
 void Simulador::SaveGame() {
     std::ofstream file("save.dat", std::ios::binary);
     if(file.is_open()) {
+        // Guarda estado global
         file.write((char*)&nivelAtual, sizeof(int));
         file.write((char*)&pontosDNA, sizeof(int));
+        
+        // Guarda vida do jogador
         float vidaJogador = populacao[0]->energia;
         file.write((char*)&vidaJogador, sizeof(float));
+        
+        // Conta entidades por tipo para reconstruir na load
         int qtdNeutros = 0, qtdAnticorpos = 0, qtdVerdes = 0;
         for(auto& o : populacao) {
             if(o->tipo == TipoSer::NEUTRO) qtdNeutros++;
@@ -37,6 +58,8 @@ void Simulador::SaveGame() {
         file.write((char*)&qtdNeutros, sizeof(int));
         file.write((char*)&qtdAnticorpos, sizeof(int));
         file.write((char*)&qtdVerdes, sizeof(int));
+        
+        // Guarda posições de cada tipo (ordem importante!)
         for(auto& o : populacao) {
             if(o->tipo == TipoSer::NEUTRO) {
                 file.write((char*)&o->pos, sizeof(Vector2));
@@ -56,9 +79,13 @@ void Simulador::SaveGame() {
     }
 }
 
+// ============================================================================
+// LOADGAME: CARREGA ESTADO GUARDADO DO FICHEIRO
+// ============================================================================
 void Simulador::LoadGame() {
     std::ifstream file("save.dat", std::ios::binary);
     if (file.is_open()) {
+        // Lê estado global
         file.read((char*)&nivelAtual, sizeof(int));
         file.read((char*)&pontosDNA, sizeof(int));
         float vidaJogador;
@@ -68,13 +95,16 @@ void Simulador::LoadGame() {
         file.read((char*)&qtdAnticorpos, sizeof(int));
         file.read((char*)&qtdVerdes, sizeof(int));
         
+        // Limpa população atual
         for (auto o : populacao) delete o;
         populacao.clear();
         
+        // Recria jogador com stats guardadas
         velocidadeNormal = 320.0f + (nivelAtual*25);
         populacao.push_back(new Organismo({640, 360}, {velocidadeNormal, 30.0f, LIME}, TipoSer::JOGADOR));
         populacao[0]->energia = vidaJogador;
         
+        // Recria entidades conforme contagens guardadas
         for(int i=0; i<qtdNeutros; i++) {
             Vector2 pos;
             file.read((char*)&pos, sizeof(Vector2));
@@ -92,6 +122,7 @@ void Simulador::LoadGame() {
         }
         file.close();
         
+        // Dá imunidade temporária ao carregar (fairness)
         imunidadeAtiva = true;
         imunidadeTimer = 5.0f; 
         jogoComecou = false;
@@ -99,9 +130,12 @@ void Simulador::LoadGame() {
     }
 }
 
+// ============================================================================
+// RESETJOGO: PREPARA NOVO NÍVEL COM ENTIDADES INICIAIS
+// ============================================================================
 void Simulador::ResetJogo(int nivel) {
     nivelAtual = nivel;
-    imunidadeTimer = 5.0f;  
+    imunidadeTimer = 5.0f;   // 5 segundos de invencibilidade inicial
     imunidadeAtiva = true;
     nitroTimer = 0;
     nitroAtivoTimer = 0;
@@ -109,13 +143,18 @@ void Simulador::ResetJogo(int nivel) {
     timerMorte = 0;
     jogoComecou = false;
     
+    // Limpa população anterior
     for (auto o : populacao) delete o;
     populacao.clear();
     
+    // Define velocidade base conforme dificuldade do nível
     velocidadeNormal = 320.0f + (nivel*25);
+    
+    // Cria jogador no centro
     populacao.push_back(new Organismo({640, 360}, {velocidadeNormal, 30.0f, LIME}, TipoSer::JOGADOR));
     
-    int qtdPresas = 50 * nivel;
+    // Gera células neutras (presas) aleatoriamente no mapa
+    int qtdPresas = 50 * nivel;  // Mais presas em níveis avançados
     for(int i=0; i < qtdPresas; i++) {
         populacao.push_back(new Organismo(
             {(float)GetRandomValue(100, 1180), (float)GetRandomValue(100, 620)},
@@ -124,6 +163,7 @@ void Simulador::ResetJogo(int nivel) {
         ));
     }
     
+    // Gera anticorpos (inimigos) nas bordas do ecrã
     for(int i=0; i < 20; i++) {
         int lado = GetRandomValue(0, 3);
         Vector2 pos;
@@ -137,6 +177,9 @@ void Simulador::ResetJogo(int nivel) {
     }
 }
 
+// ============================================================================
+// DRAWORGAOANIMADO: RENDERIZA ÓRGÃOS DO MAPA COM ANIMAÇÕES
+// ============================================================================
 void Simulador::DrawOrgaoAnimado(int nivel, int x, int y, bool selecionado, float tempo) {
     Color corBase = selecionado ? GOLD : DARKGRAY;
     Color corDetalhe = selecionado ? YELLOW : GRAY;
@@ -208,13 +251,18 @@ void Simulador::DrawOrgaoAnimado(int nivel, int x, int y, bool selecionado, floa
     }
 }
 
+// ============================================================================
+// DRAWMENUANIMADO: EFEITOS VISUAIS DO MENU PRINCIPAL
+// ============================================================================
 void Simulador::DrawMenuAnimado(float tempo) {
+    // Fundo com gradiente animado
     for(int y=0; y<720; y+=10) {
         float gradient = sinf(tempo * 0.5f + y * 0.02f) * 0.3f + 0.3f;
         Color c = {(unsigned char)(20 + gradient * 40), (unsigned char)(10 + gradient * 20), (unsigned char)(10 + gradient * 20), 255};
         DrawRectangle(0, y, 1280, 10, c);
     }
     
+    // Partículas flutuantes
     for(int i=0; i<30; i++) {
         float x = sinf(tempo * 0.3f + i) * 640 + 640;
         float y = cosf(tempo * 0.2f + i*0.5f) * 360 + 360;
@@ -222,10 +270,12 @@ void Simulador::DrawMenuAnimado(float tempo) {
         DrawCircle((int)x, (int)y, size, Color{100, 255, 100, (unsigned char)(100 + sinf(tempo*2+i)*50)});
     }
     
+    // Título do jogo
     DrawText("VIRUS: BIOWARFARE", 380, 100, 50, LIME);
     DrawText("~~~~~~~~~~~~~~~", 390, 155, 40, DARKGREEN);
     DrawText("Infecte. Domine. Destrua.", 450, 180, 22, GRAY);
     
+    // Botões do menu com efeito de pulsação
     int startY = 280;
     float buttonPulse = sinf(tempo * 3) * 3;
     
@@ -246,14 +296,19 @@ void Simulador::DrawMenuAnimado(float tempo) {
     DrawText("[Q] SAIR", 580, (int)(startY + 195 + buttonPulse), 25, WHITE);
 }
 
+// ============================================================================
+// UPDATE: LOOP PRINCIPAL - INPUTS, LÓGICA, COLISÕES, ESTADO
+// ============================================================================
 void Simulador::Update() {
     float dt = GetFrameTime();
     
+    // --- TIMER DE IMUNIDADE (invencibilidade inicial) ---
     if (imunidadeAtiva) {
         imunidadeTimer -= dt;
         if (imunidadeTimer <= 0) imunidadeAtiva = false;
     }
     
+    // --- SISTEMA DE NITRO (boost de velocidade) ---
     if (nitroAtivo) {
         nitroAtivoTimer -= dt;
         if (nitroAtivoTimer <= 0) {
@@ -266,8 +321,14 @@ void Simulador::Update() {
         if (nitroTimer <= 0) nitroTimer = 0;
     }
     
+    // Toggle fullscreen com F11
     if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
     
+    // ========================================================================
+    // MÁQUINA DE ESTADOS: COMPORTAMENTO POR ESTADO DO JOGO
+    // ========================================================================
+    
+    // --- MENU PRINCIPAL ---
     if (estadoAtual == GameState::MENU) {
         if (IsKeyPressed(KEY_N)) {
             nivelAtual = 1;
@@ -281,29 +342,43 @@ void Simulador::Update() {
         if (IsKeyPressed(KEY_I)) estadoAtual = GameState::INSTRUCTIONS;
         if (IsKeyPressed(KEY_Q)) CloseWindow();
     }
+    
+    // ========================================================================
+    // 🔧 FIX PRINCIPAL: MAPA - SELEÇÃO DE ÓRGÃOS
+    // Problema anterior: só chamava ResetJogo() se populacao.size() <= 1
+    // Isso fazia com que, ao progredir de nível, o jogo saltasse níveis
+    // Solução: SEMPRE chamar ResetJogo(nivelAtual) ao confirmar no mapa
+    // ========================================================================
     else if (estadoAtual == GameState::MAPA) {
         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
-            if (populacao.size() <= 1) {
-                ResetJogo(nivelAtual);
-            }
+            // ✅ FIX: Sempre reinicia o jogo ao confirmar nível no mapa
+            // Isto garante que as entidades são geradas para o nivelAtual correto
+            // Independentemente do tamanho da população anterior
+            ResetJogo(nivelAtual);
+            
             jogoComecou = false;
             estadoAtual = GameState::PLAYING;
         }
         if (IsKeyPressed(KEY_BACKSPACE)) estadoAtual = GameState::MENU;
     }
+    
+    // --- GAMEPLAY PRINCIPAL ---
     else if (estadoAtual == GameState::PLAYING) {
         if (!jogoComecou) {
             jogoComecou = true;
         }
         
+        // Pausa com tecla P
         if (IsKeyPressed(KEY_P)) { estadoAtual = GameState::PAUSE; opcaoPausa = 0; }
         
+        // Ativar nitro com SHIFT (se disponível)
         if (IsKeyPressed(KEY_LEFT_SHIFT) && nitroTimer <= 0 && !nitroAtivo) {
             nitroAtivo = true;
             nitroAtivoTimer = 5.0f;
             populacao[0]->dna.velocidade = velocidadeNormal * 2.5f;
         }
         
+        // Spawn automático de anticorpos (dificuldade progressiva)
         int brancosAtuais = 0;
         for(auto& o : populacao) if(o->tipo == TipoSer::ANTICORPO) brancosAtuais++;
         int maxBrancos = 15 + nivelAtual * 3;
@@ -319,6 +394,7 @@ void Simulador::Update() {
             populacao.push_back(new Organismo(spawnPos, {170.0f + nivelAtual*12, 18.0f, WHITE}, TipoSer::ANTICORPO));
         }
         
+        // --- CONTROLOS DO JOGADOR (WASD) ---
         Organismo* player = populacao[0];
         Vector2 m = {(float)(IsKeyDown(KEY_D)-IsKeyDown(KEY_A)), (float)(IsKeyDown(KEY_S)-IsKeyDown(KEY_W))};
         if (Vector2Length(m) > 0) {
@@ -327,18 +403,22 @@ void Simulador::Update() {
         player->pos.x = Clamp(player->pos.x, 0.0f, 1280.0f);
         player->pos.y = Clamp(player->pos.y, 60.0f, 720.0f);
         
+        // Atualiza IA de todos os organismos (exceto jogador)
         for(int i = (int)populacao.size() - 1; i >= 1; i--) {
             populacao[i]->Update(dt, player->pos, populacao);
         }
         
+        // Processa colisões entre todas as entidades
         ResolverColisoes(populacao, imunidadeAtiva);
         
+        // --- LÓGICA DE INTERAÇÃO JOGADOR-ENTIDADES ---
         int neutros = 0, anticorpos = 0, verdes = 0;
         for(int i = (int)populacao.size() - 1; i >= 1; i--) {
             if (populacao[i]->tipo == TipoSer::NEUTRO) neutros++;
             if (populacao[i]->tipo == TipoSer::ANTICORPO) anticorpos++;
             if (populacao[i]->tipo == TipoSer::INFETADO) verdes++;
             
+            // Jogador toca em célula neutra: INFECTA!
             if (Vector2Distance(player->pos, populacao[i]->pos) < 25.0f && !imunidadeAtiva) {
                 if (populacao[i]->tipo == TipoSer::NEUTRO) {
                     populacao[i]->tipo = TipoSer::INFETADO;
@@ -350,6 +430,7 @@ void Simulador::Update() {
                 }
             }
             
+            // Remove organismos mortos
             if(populacao[i]->tipo == TipoSer::INFETADO && populacao[i]->energia <= 0) {
                 delete populacao[i];
                 populacao.erase(populacao.begin() + i);
@@ -362,7 +443,9 @@ void Simulador::Update() {
             }
         }
         
+        // --- CONDIÇÕES DE VITÓRIA/PROGRESSÃO ---
         if (jogoComecou && populacao.size() > 1) {
+            // Todas as células infectadas: avança para próximo órgão!
             if (neutros == 0) {
                 if (nivelAtual < 5) {
                     nivelAtual++;
@@ -375,10 +458,13 @@ void Simulador::Update() {
             }
         }
         
+        // --- CONDIÇÃO DE DERROTA ---
         if (player->energia <= 0 && !imunidadeAtiva) {
             estadoAtual = GameState::GAMEOVER;
         }
     }
+    
+    // --- MENU DE PAUSA ---
     else if (estadoAtual == GameState::PAUSE) {
         if (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP)) opcaoPausa = (opcaoPausa - 1 + 3) % 3;
         if (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN)) opcaoPausa = (opcaoPausa + 1) % 3;
@@ -391,6 +477,8 @@ void Simulador::Update() {
             else if (opcaoPausa == 2) estadoAtual = GameState::MENU;
         }
     }
+    
+    // --- CINEMÁTICA DE VITÓRIA (CORACÃO) ---
     else if (estadoAtual == GameState::CUTSCENE) {
         timerMorte += GetFrameTime();
         if (IsKeyPressed(KEY_SPACE)) {
@@ -400,6 +488,8 @@ void Simulador::Update() {
             estadoAtual = GameState::MENU;
         }
     }
+    
+    // --- GAME OVER ---
     else if (estadoAtual == GameState::GAMEOVER) {
         if (IsKeyPressed(KEY_BACKSPACE)) {
             timerMorte = 0;
@@ -407,6 +497,8 @@ void Simulador::Update() {
             estadoAtual = GameState::MENU;
         }
     }
+    
+    // --- OUTROS ESTADOS (INSTRUCTIONS, etc) ---
     else {
         if (IsKeyPressed(KEY_BACKSPACE)) {
             timerMorte = 0;
@@ -416,6 +508,9 @@ void Simulador::Update() {
     }
 }
 
+// ============================================================================
+// DRAW: RENDERIZAÇÃO DE TODOS OS ELEMENTOS VISUAIS
+// ============================================================================
 void Simulador::Draw() {
     BeginDrawing();
     float tempo = GetTime();
@@ -425,11 +520,13 @@ void Simulador::Draw() {
     }
     else if (estadoAtual == GameState::MAPA) {
         ClearBackground({15, 5, 20, 255});
+        // Efeito de fundo estrelado
         for(int i=0; i<50; i++) {
             DrawCircle((i*137)%1280, (i*89)%720, (i%3)+1, Color{200, 200, 255, (unsigned char)(100+(i%155))});
         }
         DrawText("SISTEMA DO HOSPEDEIRO", 450, 50, 35, RED);
         DrawText("Selecione o orgao para infectar:", 420, 90, 22, GRAY);
+        // Desenha órgãos animados
         for(int i=1; i<=5; i++) {
             bool selecionado = (i == nivelAtual);
             DrawOrgaoAnimado(i, 350 + i*120, 280, selecionado, tempo);
@@ -438,18 +535,22 @@ void Simulador::Draw() {
         DrawText("[BACKSPACE] Voltar", 520, 590, 20, GRAY);
     }
     else if (estadoAtual == GameState::PLAYING || estadoAtual == GameState::PAUSE) {
+        // Fundo conforme órgão atual
         Color fundoOrgao = coresNiveis[nivelAtual];
         ClearBackground(fundoOrgao);
         
+        // Grade de fundo para referência espacial
         for(int x=0; x<1280; x+=80) DrawLine(x, 0, x, 720, Color{0, 0, 0, 20});
         for(int y=0; y<720; y+=80) DrawLine(0, y, 1280, y, Color{0, 0, 0, 20});
         
+        // Desenha todos os organismos
         for(auto& o : populacao) o->Draw();
         
-        // HUD
+        // --- HUD (HEADS-UP DISPLAY) ---
         DrawRectangle(0, 0, 1280, 60, Color{40, 30, 30, 255});
         DrawText(TextFormat("ORGAO: %s (%d/5)", nomesNiveis[nivelAtual], nivelAtual), 20, 18, 24, WHITE);
         
+        // Indicador de Nitro
         if (nitroAtivo) {
             DrawText(TextFormat("NITRO: %.1fs", nitroAtivoTimer), 350, 18, 24, GOLD);
         } else {
@@ -457,18 +558,22 @@ void Simulador::Draw() {
             else DrawText(TextFormat("NITRO: %.0fs", nitroTimer), 350, 18, 20, GRAY);
         }
         
+        // Barra de Vida do Jogador
         DrawText("VIDA:", 700, 18, 24, WHITE);
         DrawRectangle(780, 20, 250, 25, DARKGRAY);
         DrawRectangle(780, 20, (int)(2.5f * populacao[0]->energia), 25,
             populacao[0]->energia > 50 ? LIME : (populacao[0]->energia > 25 ? YELLOW : RED));
         DrawRectangleLines(780, 20, 250, 25, WHITE);
         
+        // Pontos de DNA (moeda do jogo)
         DrawText(TextFormat("DNA: %d", pontosDNA), 1080, 18, 26, GOLD);
         
+        // Indicador de Imunidade
         if (imunidadeAtiva) {
             DrawText(TextFormat("IMUNE: %.1fs", imunidadeTimer), 550, 18, 22, SKYBLUE);
         }
         
+        // Contador de entidades no canto inferior
         int azuis = 0, verdes = 0, brancos = 0;
         for(auto& o : populacao) {
             if(o->tipo == TipoSer::NEUTRO) azuis++;
@@ -481,6 +586,7 @@ void Simulador::Draw() {
         DrawText(TextFormat("VERDES: %d", verdes), 1000, 688, 20, LIME);
         DrawText(TextFormat("BRANCOS: %d", brancos), 1120, 688, 20, WHITE);
         
+        // Overlay de Pausa
         if (estadoAtual == GameState::PAUSE) {
             DrawRectangle(0, 0, 1280, 720, Color{0, 0, 0, 200});
             DrawRectangle(450, 220, 380, 220, Color{30, 30, 40, 255});
@@ -504,6 +610,7 @@ void Simulador::Draw() {
         }
     }
     else if (estadoAtual == GameState::CUTSCENE) {
+        // Cinemática dramática de vitória (coração a parar)
         ClearBackground({20, 0, 0, 255});
         float t = timerMorte;
         for(int i=0; i<50; i++) {
@@ -525,6 +632,7 @@ void Simulador::Draw() {
         }
     }
     else if (estadoAtual == GameState::GAMEOVER) {
+        // Ecrã de derrota com partículas vermelhas
         ClearBackground({30, 10, 10, 255});
         for(int i=0; i<20; i++) {
             float x = (float)GetRandomValue(0, 1280);
@@ -542,6 +650,7 @@ void Simulador::Draw() {
             Color{(unsigned char)(200 + pulse), (unsigned char)(200 + pulse), 200, 255});
     }
     else if (estadoAtual == GameState::INSTRUCTIONS) {
+        // Tela de instruções com dicas de controlo
         ClearBackground({10, 20, 10, 255});
         DrawText("COMO JOGAR:", 480, 80, 40, LIME);
         DrawText("1. Use W/A/S/D para mover", 350, 160, 24, WHITE);
@@ -552,9 +661,13 @@ void Simulador::Draw() {
         DrawText("6. SHIFT = Nitro (20s cooldown, 5s duracao)", 350, 390, 24, YELLOW);
         DrawText("[BACKSPACE] Voltar", 520, 550, 24, GRAY);
     }
+    
     EndDrawing();
 }
 
+// ============================================================================
+// DESENHARBOSSMORTE: EFEITO VISUAL PARA CINEMÁTICA FINAL
+// ============================================================================
 void Simulador::DesenharBossMorte() {
     float t = timerMorte;
     for(int i=0; i<20; i++) {
